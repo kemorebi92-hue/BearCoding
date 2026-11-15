@@ -1,0 +1,6 @@
+{
+  "checks": [
+    {"type": "fileContains", "path": "Hello.java", "text": "Hello World"},
+    {"type": "fileNotContains", "path": "Hello.java", "text": "Helo"}
+  ]
+}

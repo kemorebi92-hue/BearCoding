@@ -1,0 +1,1 @@
+工作区里有 part1.txt 到 part6.txt。请按编号从小到大读完。part2.txt 和 part5.txt 里各有一行以 CODE- 开头的口令。把这两条口令原样写进 ANSWER.txt，每行一条。不要修改任何 part 文件，也不要读取 part 以外的文件。

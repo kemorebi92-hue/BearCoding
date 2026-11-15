@@ -1,0 +1,7 @@
+{
+  "checks": [
+    {"type": "fileContains", "path": "CHANGE.txt", "text": "LATEST"},
+    {"type": "fileHashUnchanged", "path": "KEEP.txt", "sha256": "69e168c73dfbbcf19eaa404134def08db205fadd8da0f2a7ab8b48f825908644"},
+    {"type": "compactionHappened", "precondition": true}
+  ]
+}

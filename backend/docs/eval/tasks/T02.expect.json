@@ -1,0 +1,5 @@
+{
+  "checks": [
+    {"type": "commandOutputContains", "command": "javac -encoding UTF-8 -d out src/App.java && echo COMPILE_OK", "text": "COMPILE_OK"}
+  ]
+}

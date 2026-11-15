@@ -1,0 +1,1 @@
+工作区里某个 .java 文件含有 TOKEN_42。不要猜路径。先用 grepFile 或 globFile 找到它，再把 TOKEN_42 改成 TOKEN_99。含 TOKEN_00 的文件不要动。

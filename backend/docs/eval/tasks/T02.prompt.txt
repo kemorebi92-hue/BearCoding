@@ -1,0 +1,1 @@
+修好 src/App.java，让 javac -encoding UTF-8 -d out src/App.java 能通过。main 的参数必须是 String[]，不要写成 String；语句必须以分号结尾。

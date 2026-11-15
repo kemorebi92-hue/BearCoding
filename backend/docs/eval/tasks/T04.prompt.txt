@@ -1,0 +1,1 @@
+把 KEEP.txt 和 CHANGE.txt 这两个标记都改成 LATEST，让它们保持一致。

@@ -1,0 +1,6 @@
+{
+  "checks": [
+    {"type": "planStepDone", "stepId": "s3"},
+    {"type": "fileContains", "path": "step3.txt", "text": "STEP3-DONE"}
+  ]
+}

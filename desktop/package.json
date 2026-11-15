@@ -1,0 +1,56 @@
+{
+  "name": "bearcoding-desktop",
+  "version": "3.0.0",
+  "description": "BearCoding Windows desktop shell",
+  "private": true,
+  "author": "BearCoding Contributors",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/paths.test.cjs",
+    "test:runtime": "powershell -NoProfile -ExecutionPolicy Bypass -File ./test/packaged-runtime-verify.ps1",
+    "test:electron": "powershell -NoProfile -ExecutionPolicy Bypass -File ./test/startup-verify.ps1",
+    "build:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File ./build-portable.ps1"
+  },
+  "build": {
+    "appId": "com.bearcoding.desktop",
+    "productName": "BearCoding",
+    "artifactName": "BearCoding-${version}-portable.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "main.cjs",
+      "paths.cjs",
+      "package.json",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": ".build/bearcoding-backend.jar",
+        "to": "app/bearcoding-backend.jar"
+      },
+      {
+        "from": ".build/jre",
+        "to": "jre"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "45.3.2",
+    "electron-builder": "26.18.0"
+  }
+}

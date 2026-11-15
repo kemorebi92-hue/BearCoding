@@ -1,0 +1,6 @@
+{
+  "checks": [
+    {"type": "fileContains", "path": "only.txt", "text": "blue"},
+    {"type": "fileHashUnchanged", "path": "other.txt", "sha256": "35cf4f8556ec9cc65ed551436310aa1dbcbb73e9536d955ff382b71af2cb544d"}
+  ]
+}

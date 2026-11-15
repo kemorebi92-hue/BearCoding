@@ -1,0 +1,8 @@
+{
+  "checks": [
+    {"type": "fileContains", "path": "a/A.java", "text": "NEW"},
+    {"type": "fileContains", "path": "b/B.java", "text": "NEW"},
+    {"type": "fileNotContains", "path": "a/A.java", "text": "OLD"},
+    {"type": "fileNotContains", "path": "b/B.java", "text": "OLD"}
+  ]
+}

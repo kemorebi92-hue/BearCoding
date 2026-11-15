@@ -1,0 +1,6 @@
+{
+  "checks": [
+    {"type": "fileContains", "path": "lib/App.java", "text": "FIXED"},
+    {"type": "fileNotContains", "path": "lib/App.java", "text": "FIXME"}
+  ]
+}

@@ -1,0 +1,89 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### 本地密钥配置（绝不提交）###
+application-local.yml
+application-*-local.yml
+.env
+*.key
+
+### 日志 ###
+*.log
+logs/
+### 验收时 `bash run.sh 2>&1 | tee nohup.out` 的落点（子代理日志靠它 grep，不入库）###
+nohup.out
+
+### WorkBuddy 本地记录 ###
+.workbuddy/
+
+### 无 Maven 本地启动脚本生成的构建产物（含超长 classpath）###
+compile.args
+run.args
+
+### 用户上传的工作区文件（运行时数据，绝不提交）###
+workspaces/
+
+### SQLite 运行时数据库（sqlite profile，运行时数据，绝不提交）###
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+### 临时截图 / 一次性产物（不入库）###
+educoder-homework-done.png
+
+### 评测产物（本地跑 Plan-and-Execute 评测生成，体积大、不入库）###
+eval-output/
+
+### Python 缓存（评测脚手架是 Python 脚本）###
+__pycache__/
+*.pyc
+
+### Playwright MCP 运行时快照（cwd 下自动写出，不入库）###
+.playwright-mcp/
+*-snapshot.yml
+bing-results.yml
+
+### MCP 运行时产物与本机配置（不入库）###
+mcp-output/
+mcp-run.yml
+mcp-run.verify.yml
+*.args
+page_snapshot.yml
+snapshot_*.yml
+pwsnap/
+py_functions_snapshot.txt
+pysnap.txt
+focus-mcp-browser.ps1

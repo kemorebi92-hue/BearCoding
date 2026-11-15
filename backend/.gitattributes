@@ -1,0 +1,5 @@
+/mvnw text eol=lf
+*.cmd text eol=crlf
+# 评测素材和期望按字节比对（sha256）。autocrlf=true 时不能把它们收成 CRLF。
+docs/eval/fixtures/** text eol=lf
+docs/eval/tasks/** text eol=lf

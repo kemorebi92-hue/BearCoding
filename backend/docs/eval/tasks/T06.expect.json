@@ -1,0 +1,8 @@
+{
+  "forbiddenTools": ["createPlan"],
+  "checks": [
+    {"type": "replyContains", "text": "2"},
+    {"type": "fileHashUnchanged", "path": "marker.txt", "sha256": "244e294109b9af350a490363e42be985b10d475b3f3adc6d791a6fdf53415d83"},
+    {"type": "toolNotCalled", "tool": "createPlan"}
+  ]
+}

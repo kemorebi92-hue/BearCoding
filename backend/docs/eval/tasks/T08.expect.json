@@ -1,0 +1,7 @@
+{
+  "checks": [
+    {"type": "fileContains", "path": "src/hidden/Real.java", "text": "TOKEN_99"},
+    {"type": "fileNotContains", "path": "src/hidden/Real.java", "text": "TOKEN_42"},
+    {"type": "fileHashUnchanged", "path": "src/decoy/Fake.java", "sha256": "e6acf4783a901c66a154ee25050d335a5ec4d5e308740b139d4ba12ecefaef12"}
+  ]
+}

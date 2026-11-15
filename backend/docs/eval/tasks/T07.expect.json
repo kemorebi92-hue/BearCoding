@@ -1,0 +1,6 @@
+{
+  "checks": [
+    {"type": "fileContains", "path": "Dup.java", "text": "// UNIQUE_B\n        return 2;"},
+    {"type": "fileContains", "path": "Dup.java", "text": "// UNIQUE_A\n        return 1;"}
+  ]
+}

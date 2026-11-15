@@ -1,0 +1,112 @@
+# ==================== 构建产物 ====================
+target/
+node_modules/
+dist/
+# 前端构建产物在打包时复制到这里，属于生成物，不提交
+backend/src/main/resources/static/
+
+# ==================== 日志 / 运行时数据 ====================
+*.log
+logs/
+data/
+runtime/
+workspaces/
+mcp-output/
+eval-output/
+
+# ==================== 数据库（本地 SQLite 运行时库，含真实会话数据） ====================
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.db3
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+
+# ==================== 凭证与私有配置 ====================
+# .env 家族：只允许公开的示例文件（否定规则必须排在后面才生效）
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+# 私有 Spring 配置（本地数据库口令 / 模型 Key / MCP 凭证）
+application-local.yml
+application-*-local.yml
+application-local*.yml
+config/application-local*.yml
+config/application-*-local.yml
+# 证书与私钥
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+# 本机加密凭证（DPAPI 密文）永远不进 Git
+secrets/
+search-credential.bin
+# 可能含 registry Token 的本地 npm 配置
+.npmrc
+
+# ==================== 本地工具 / IDE ====================
+.idea/
+*.iml
+# Claude Code 本地配置（含本机路径与授权偏好，不属于项目源码）
+.claude/
+nohup.out
+__pycache__/
+*.pyc
+
+# ==================== 浏览器调试产物 ====================
+.playwright-mcp/
+*.har
+playwright-report/
+test-results/
+blob-report/
+
+# ==================== Electron 桌面构建产物 ====================
+# 只忽略明确的生成物；desktop 源码（main.cjs / paths.cjs / package.json 等）要发布
+*.asar
+dist-electron/
+electron-dist/
+desktop-dist/
+release-build/
+desktop/.build/
+desktop/release/
+desktop/test-user-data/
+
+# ==================== 本机工具产物 ====================
+# Phase A 修复 backend 目录写权限时留下的权限备份与回滚脚本（本机文件，与项目无关）
+.dsh-acl-recovery/
+
+# ==================== 发布候选：不公开的内部资料 ====================
+# 旧版打包 ZIP。发布用源码，不发布历史压缩包；本地原件保留。
+/BearCoding-Final-docs.zip
+# 根目录旧版验收教程，已被 docs/BearCoding-Final-用户手动验收教程.md 取代（含历史项目路径）。
+/手动验收教程.md
+# 内部交接提示词与阶段内部报告（含本机路径与尚未验证的结论），不属于公开文档。
+/docs/HANDOFF-NEXT-DSH.md
+/docs/M1-history-summary-report.md
+# 一次性人工验收 runbook：绑定某次运行的端口（18190/18186）、临时数据根和本机用户目录，
+# 属于内部操作记录而不是可复用的公开文档。
+/docs/BearCoding-Final-用户手动验收教程.md
+
+# ==================== 发布候选：验收证据只保留 Markdown 报告 ====================
+# evidence/ 下只公开人工撰写的 .md 报告；原始运行产物（截图、日志、JSON 结果、
+# 冒烟脚本）含本机用户目录与测试数据，不进入公开仓库。
+/evidence/**/*.json
+/evidence/**/*.js
+/evidence/**/*.mjs
+/evidence/**/*.ps1
+/evidence/**/*.txt
+/evidence/**/*.png
+/evidence/**/*.jpg
+/evidence/**/screenshots/
+
+# ==================== 通用系统垃圾文件 ====================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp

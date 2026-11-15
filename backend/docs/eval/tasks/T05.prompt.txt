@@ -1,0 +1,1 @@
+按三步做，不要提前收工：s1 确认 step1.txt 已有 step1-done；s2 确认 step2.txt 已有 step2-done；s3 新建 step3.txt，内容正好是 STEP3-DONE。三步都做完再停。

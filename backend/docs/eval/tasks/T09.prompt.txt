@@ -1,0 +1,1 @@
+只能改 only.txt，把 red 改成 blue。不要改 other.txt，也不要新建文件。

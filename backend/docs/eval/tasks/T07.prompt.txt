@@ -1,0 +1,1 @@
+Dup.java 里有两段 return 1。只把注释是 UNIQUE_B 的那段改成 return 2。UNIQUE_A 那段必须保持 return 1。

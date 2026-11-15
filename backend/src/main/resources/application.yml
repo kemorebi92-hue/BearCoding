@@ -1,0 +1,400 @@
+server:
+  port: 8082
+  address: 127.0.0.1
+
+app:
+  auth:
+    # local   = 浏览器开发 / 自动化验收：本机单用户，不校验启动令牌（行为与加鉴权前一致）
+    # desktop = Electron 正式启动：/ai/**、/api/**、/user/** 必须带 X-BearCoding-Token
+    # 不要把令牌写在本文件里：Electron 主进程每次启动生成随机令牌，通过
+    # BEARCODING_LOCAL_TOKEN 环境变量传入。desktop 模式下令牌为空会直接启动失败（fail-closed）。
+    mode: ${APP_AUTH_MODE:local}
+    local-token: ${BEARCODING_LOCAL_TOKEN:}
+
+  data:
+    mode: ${APP_DATA_MODE:desktop}
+    root: ${JINGJING_DATA_DIR:}
+    copy-legacy-database: false
+
+  # 多用户限流（滑动窗口）：每个用户每 window-ms 毫秒内最多 max-requests 次对话
+  rate-limit:
+    window-ms: 60000
+    max-requests: 20
+
+  # 工具沙箱：文件读写/命令执行的工作区根目录（越界会被拦截）
+  sandbox:
+    root: ${SANDBOX_ROOT:.}
+
+  # 用户上传文件的隔离工作区根目录；实际使用 {root}/{userId}/{conversationId}/
+  workspace:
+    root: ${WORKSPACE_ROOT:./workspaces}
+
+  # 上下文窗口。history：只在进工具循环前按历史正文判断一次；total：每轮调用模型前按完整输入判断。
+  # 两套口径都保留：main 的 compact-scope / compact-threshold-total / compact-strategy 决定 total 口径，
+  # feature 的 compact-window-percent 决定「相对模型真实窗口的百分比」触发线。
+  context:
+    # 历史消息预算。max-tokens 是旧名字，history-max-tokens 是新名字，
+    # 代码按 history-max-tokens -> max-tokens 的顺序回退（见 ContextCompactor 与 ChatController）。
+    # 两个值目前不一致（8000 / 64000）：合并时未擅自改任一侧，最终取值待定，见阶段 C-1 报告。
+    # 代码实际生效的是 history-max-tokens = 64000。压缩后打算留下的历史量；窗口已知时，触发线仍是窗口的 compact-window-percent。
+    max-tokens: 8000
+    history-max-tokens: 64000
+    compact-scope: ${APP_CONTEXT_COMPACT_SCOPE:history}
+    compact-threshold-total: ${APP_CONTEXT_COMPACT_THRESHOLD_TOTAL:32000}
+    compact-min-gap: ${APP_CONTEXT_COMPACT_MIN_GAP:3}
+    compact-growth-ratio: ${APP_CONTEXT_COMPACT_GROWTH_RATIO:0.30}
+    # 阈值减去固定部分之后，消息预算低于这个数就不压缩。
+    compact-min-message-budget: ${APP_CONTEXT_COMPACT_MIN_MESSAGE_BUDGET:1000}
+    # summary：旧消息交给模型摘要。digest：不调模型，改写成占位符。tiered：先 digest，估算仍超过阈值的接受比例再改走摘要。
+    compact-strategy: ${APP_CONTEXT_COMPACT_STRATEGY:summary}
+    # digest 在被压掉的那一段里，保留最近几组工具结果的原文。默认 0。最近的消息已经由保留窗口留下。
+    digest-keep-tool-groups: ${APP_CONTEXT_DIGEST_KEEP_TOOL_GROUPS:0}
+    # tiered 接受 digest 的上限，是阈值的这个比例。默认 0.9。
+    tiered-accept-ratio: ${APP_CONTEXT_TIERED_ACCEPT_RATIO:0.9}
+    # 本轮预计总输入（历史 + 系统提示 + 工具定义）超过真实窗口的这个百分比才压缩。
+    compact-window-percent: 65
+    # 单次任务累计输入 token（每一轮 prompt 相加，不是峰值）。超过后让模型停下来总结。
+    # 0 = 关掉。200 万大约盖得住「44 轮、从 1.5 万涨到 4.1 万」那种已经跑完的任务，
+    # 更长的空转会被拦住。按账单调。
+    task-input-token-budget: 2000000
+    working-set:
+      # enabled=true：每轮从源账本重新投影，实际发给模型的历史会减少。
+      enabled: ${APP_CONTEXT_WORKING_SET_ENABLED:true}
+      # 只记录影子分类、Token 估算和缓存前缀变化。真实投影打开时仍可对照。
+      shadow-enabled: ${APP_CONTEXT_WORKING_SET_SHADOW_ENABLED:true}
+      # 与压缩后保留的历史量相同。超过后工作集才退休更早的工具组，不是模型窗口本身。
+      soft-budget-tokens: ${APP_CONTEXT_WORKING_SET_SOFT_BUDGET_TOKENS:64000}
+      # 留空时观测只在请求内存里。写出的 JSONL 不含 Prompt 明文。
+      observation-path: ${APP_CONTEXT_WORKING_SET_OBSERVATION_PATH:}
+
+  # ===== 项目记忆（工作区 memory/*.md）=====
+  # 当前工作区下的 markdown，每次在该工作区对话会注入。没有文件夹则零开销。
+  # 与 app.user-memory（按用户、MySQL）是两套，不要混。
+  memory:
+    enabled: ${MEMORY_ENABLED:true}
+    dir: ${MEMORY_DIR:memory}
+    index-name: ${MEMORY_INDEX_NAME:MEMORY.md}
+    max-files: ${MEMORY_MAX_FILES:12}
+    max-file-chars: ${MEMORY_MAX_FILE_CHARS:8000}
+    max-total-chars: ${MEMORY_MAX_TOTAL_CHARS:25000}
+    max-file-bytes: ${MEMORY_MAX_FILE_BYTES:65536}
+    auto-consolidate: false
+
+  # ===== 规划机制（Plan-and-Execute）开关 =====
+  # 全部带默认值。只改这里就能做 A/B 对照，不必改代码（详见 docs/plan-ab-testing.md）。
+  plan:
+    # createPlan 的入参形态：
+    #   flat（默认）—— 一个普通字符串，"一行一步"，后端解析；避开"数组套对象"这种
+    #                  模型最不愿调用的复杂 schema。
+    #   structured —— 保持改动前的嵌套对象数组形态，用作 A/B 的对照基线。
+    steps:
+      mode: ${PLAN_STEPS_MODE:flat}
+    # 每轮注入计划内容的策略：
+    #   slim=true（默认）—— 常态只注入一行摘要，仅在"步骤状态变化 / 距上次全量满 N 轮 /
+    #                        刚压缩过上下文"时才注入完整清单（省 token 的主要来源）。
+    #   slim=false        —— 回退旧行为：每轮都注入完整清单（用于 A/B 对照）。
+    injection:
+      slim: ${PLAN_INJECTION_SLIM:true}
+      # 全量清单的兜底刷新间隔（轮），仅在 slim=true 时有意义
+      full-refresh-every: ${PLAN_FULL_REFRESH_EVERY:6}
+    # 漂移信号 + 分级提醒：只在"会话还没有计划"时生效。
+    #   off  = 关闭（对照组）
+    #   soft = 只提醒，不强制  ← 默认
+    #   hard = 信号 ≥2 条、或 SOFT 提醒过一次仍不建计划 → 下一轮强制
+    #
+    # 【为什么默认从 hard 改成 soft】（2026-09-19 实测，见 docs/eval/plan-judgement-report-3.md）
+    # 强制的两种手段里，toolChoice 这条路**根本走不通**：
+    #   spring-ai-openai 1.0.0 的 OpenAiChatModel 从不读取 options.getToolChoice()
+    #   （javap -c 全类检索不到该调用；整个 jar 里只有 OpenAiChatOptions 自己的 getter 提到它），
+    #   所以 tool_choice 从来没有被序列化进 HTTP 请求体 —— 换任何端点都一样发不出去。
+    #   端点本身是支持的（curl 实测 DeepSeek 在 reasoning_effort=none 下会照做），是我们发不出去。
+    # 剩下能真正生效的只有 stripWriteTools：它靠"下一轮不下发写类工具"+ 执行层拒绝（ToolGuard）
+    # 来收敛模型行为，代价是那一轮模型会撞墙一次。
+    # 结论：默认 soft（只提醒，成本低、无副作用）；hard 保留为可选项，真要用请配 stripWriteTools。
+    nudge:
+      mode: ${PLAN_NUDGE_MODE:soft}
+      cooldown: ${PLAN_NUDGE_COOLDOWN:3}
+      modified-files-threshold: ${PLAN_NUDGE_FILES:3}
+      verify-failures-threshold: ${PLAN_NUDGE_VERIFY_FAILS:2}
+      # 轮数阈值：实测 8 偏低 —— 「简单但走得慢」的任务（读了几轮文件、编译跑了两遍）也会攒到 8 轮，
+      # 误触发"该规划了"的提醒（G3/G6/G7/M1 都中过招）。真正的复杂任务通常在此之前就已经有
+      # 别的信号（多文件/编译失败）或已自主规划。调到 12 只做兜底。
+      rounds-threshold: ${PLAN_NUDGE_ROUNDS:12}
+      enumeration-min-length: ${PLAN_NUDGE_ENUM_LEN:120}
+      enumeration-min-markers: ${PLAN_NUDGE_ENUM_MARKERS:3}
+      hard:
+        # stripWriteTools（默认，唯一真正生效的）| toolChoice（当前 Spring AI 下发不出去，仅保留）
+        strategy: ${PLAN_NUDGE_HARD_STRATEGY:stripWriteTools}
+        # 强制那一轮是否顺带关掉"思考模式"（发给模型 reasoning_effort=none）。
+        # 实测（2026-09-19）：
+        #   · DeepSeek：思考模式会**直接 400 拒绝** tool_choice
+        #     （"Thinking mode does not support this tool_choice"）；把思考关掉之后同一个请求
+        #     就会被正常执行、模型会照做调用 createPlan。→ 所以这项默认开，否则 DeepSeek 上强制发不出去。
+        #   · 小米 MiMo：接受该字段但**依旧静默忽略 tool_choice**（连非法值都返回 200）→
+        #     在这类端点上"强制"不生效，日志里会看到"强制未生效"。
+        # 不认识的端点若因此报错，会走"强制请求异常 → 回退普通请求"分支，不会让对话挂掉。
+        disable-thinking: ${PLAN_NUDGE_HARD_DISABLE_THINKING:true}
+
+  # 联网搜索（webSearch 工具）：可替换的搜索服务接口层，这里只选"用哪家 + 填 key"。
+  # provider 可选：tavily | serper | bocha（想加新的一家？实现 SearchProvider + 加 @Component 即可）
+  # 密钥不要写在这里！优先用一次性导入写入本机 DPAPI 加密文件（见 docs/DESKTOP-PACKAGING.md）：
+  #     %LOCALAPPDATA%\BearCoding\secrets\search-credential.bin
+  # 未导入时才回退到环境变量 / application-local.yml 的 SEARCH_API_KEY（该文件已被 .gitignore 忽略）。
+  # 一次性导入（不会回显、不会写入命令行历史）：
+  #     set BEARCODING_IMPORT_SEARCH_KEY=1
+  #     java -jar bailianAI-3.0.0.jar --spring.main.web-application-type=none
+  # 替换已保存的凭证需再加 --app.search.import-force=true；停用用 --app.search.remove-key=true。
+  search:
+    provider: ${SEARCH_PROVIDER:tavily}
+    api-key: ${SEARCH_API_KEY:}
+    # 留空 = 桌面模式用 {数据根}\secrets\search-credential.bin，开发模式用 ./data/secrets/...
+    # 显式指定时必须是绝对路径。
+    credential-file: ${SEARCH_CREDENTIAL_FILE:}
+    max-results: 5
+    timeout-seconds: 15
+    proxy: ${SEARCH_PROXY:}
+    import-key: ${BEARCODING_IMPORT_SEARCH_KEY:false}
+    import-provider: ${BEARCODING_IMPORT_SEARCH_PROVIDER:}
+    import-force: ${BEARCODING_IMPORT_SEARCH_FORCE:false}
+    import-from-file: ${BEARCODING_IMPORT_SEARCH_KEY_FILE:}
+    import-prompt: ${BEARCODING_IMPORT_SEARCH_PROMPT:true}
+    import-exit: ${BEARCODING_IMPORT_SEARCH_EXIT:true}
+    remove-key: ${BEARCODING_REMOVE_SEARCH_KEY:false}
+
+  # ===== 子代理（spawnSubagent 工具）=====
+  # 这一块整体是"可关的"：enabled=false 时**工具不下发、提示词里也不提**（见 AgentPrompts.systemPrompt），
+  # 模型连试都不会试。早期版本是"工具还在、闸门拒绝"——对照组实测会白烧一轮 REJECTED，所以改成了不出现。
+  # 默认开是安全的：模型不调 spawnSubagent 时，整个机制零开销（没有线程、没有额外模型调用）。
+  subagent:
+    enabled: ${SUBAGENT_ENABLED:true}
+    # 同时能跑几个子代理（真并行的上限）。**超出的直接拒绝**（返回错误 tool result），不再排队 ——
+    # 排队会让主 agent 以为"派出去了"其实还在等，成本与收益都算不清。
+    # 参考值：Codex 默认 6、Claude Code 默认 20；我们的资源更小，取保守值 4。
+    max-concurrent: ${SUBAGENT_MAX_CONCURRENT:4}
+    # 单个子代理的轮数预算（可在 spawnSubagent 的 maxRounds 参数里调小，但不会超过 hard-cap）。
+    # 没填 thoroughness 时用这个值；填了走下面的 quick/medium/thorough 档位。
+    max-rounds: ${SUBAGENT_MAX_ROUNDS:48}
+    hard-cap: ${SUBAGENT_HARD_CAP:96}
+    # 同一个目标（按规范化后的 goal 比对）在一次用户请求内最多额外重派几次。
+    # 总派出次数 = 1 + 这个值。用满后返回 failureReason=RETRY_LIMIT，并提示主 agent 自己做。
+    max-retries-per-goal: ${SUBAGENT_MAX_RETRIES_PER_GOAL:2}
+    # 同一个目标最多允许**续跑**（resume，带着上次保留的历史接着跑）几次。
+    # 0 = 关掉续跑，此时 PARTIAL 的工具结果会如实写"此类型不可续跑"、只给 (a)(c) 两个选项。
+    max-resumes-per-goal: ${SUBAGENT_MAX_RESUMES_PER_GOAL:1}
+    # 续跑时**追加**的轮数预算（不含收尾轮；收尾轮另算 1 轮，所以实际会跑 resumeRounds+1 轮）。
+    resume-rounds: ${SUBAGENT_RESUME_ROUNDS:4}
+    # PARTIAL 工具结果是否把续跑放第一位并给出可复制调用（评测 V1）。false = 旧三选一（评测 V0）。
+    # 续跑只由主代理决定再派，内核不自动追加模型请求。
+    partial-resume-first: ${SUBAGENT_PARTIAL_RESUME_FIRST:true}
+    # ===== 条件注入（第二轮降本试验 B2）=====
+    # 默认 false = 现状（enabled=true 就始终下发工具+规则）。
+    # 开启后只有满足下面任一条件才下发：① 请求命中 conditional-prompt-patterns；② 上下文估算 token ≥ 阈值。
+    # 不满足时行为**完全等同关组**（工具不下发、提示词里的派发规则整段摘掉）。
+    conditional-injection: ${SUBAGENT_CONDITIONAL_INJECTION:false}
+    # 宽泛探索特征（JSON 数组，正则）。2026-09 放宽：除「所有…有关」外，
+    # 显式「并行/两个 explore/多文件调研」、以及「预算+失败重拆」类多问题提示也能命中（覆盖 S2/S2P/S5-T2）。
+    # S1 单文件问法仍不命中。阈值口径同时计入会话内已 readFile 正文估算（见 SubagentTelemetry）。
+    conditional-prompt-patterns: ${SUBAGENT_CONDITIONAL_PATTERNS:["(?i).*(所有|全部|整个|全库).*(有关|相关|逻辑|用法|实现|调用).*","(?i).*(梳理|通读|扫一遍|全面了解|盘点).*","(?i).*(找出|列出|搜集|汇总|比较).*(所有|全部|各处|各个).*","(?i).*(两个|两件|并行).*(explore|子代理|调研).*","(?i).*(互不相关|互相独立).*(问题|事).*","(?i).*(派发预算|最多能派|续跑几次|失败.*重拆|重新拆分).*"]}
+    # 主 agent 上下文估算 token 阈值 = 落库历史 + 本轮输入 + 会话内已 readFile 正文估算。
+    # 15000：S1 单文件仍远低于此；S5 预热读完大文件后累计可读字数会跨过阈值。
+    conditional-context-threshold: ${SUBAGENT_CONDITIONAL_THRESHOLD:15000}
+    # ===== 子代理独立模型（第二轮降本试验 B1）=====
+    # 留空 = 沿用主 agent 本轮选定的模型（现状）。填 ModelConfig 的名字则用那个模型跑子代理房间。
+    model-id: ${SUBAGENT_MODEL_ID:}
+    # ===== 派发决策 V2（默认关 = 现状）=====
+    # true：主循环截断工具结果 + 派发提示词/工具说明换成「看得到再判断、别把整目录塞进主上下文」。
+    # 评测见 docs/subagent-dispatch-eval.md。
+    dispatch-v2: ${SUBAGENT_DISPATCH_V2:false}
+    # 主循环单条工具结果硬顶（字符）。仅 dispatch-v2=true 时生效。
+    # 12000 ≈ 混合文本约 8000 token（CJK 1 字≈1 tok，ASCII ≈4 字/tok）。
+    main-tool-result-chars: ${SUBAGENT_MAIN_TOOL_RESULT_CHARS:12000}
+    # V2 累计用量软提示（默认关）。须同时 dispatch-v2=true。
+    # 主循环工具结果累计估算 token ≥ 阈值后，下一轮 messages 末尾追加一次「建议派 explore」。
+    dispatch-v2-soft-hint: ${SUBAGENT_DISPATCH_V2_SOFT_HINT:false}
+    soft-hint-threshold-tokens: ${SUBAGENT_SOFT_HINT_THRESHOLD:15000}
+    # 开放式探索探测阈值（写入 V2 提示词与 list/glob 规模提示）
+    probe-file-threshold: ${SUBAGENT_PROBE_FILE_THRESHOLD:20}
+    probe-bytes-threshold: ${SUBAGENT_PROBE_BYTES_THRESHOLD:102400}
+    # 主循环 grep 命中过多时附提示（行数 / 文件数）
+    grep-hit-line-threshold: ${SUBAGENT_GREP_HIT_LINE_THRESHOLD:100}
+    grep-hit-file-threshold: ${SUBAGENT_GREP_HIT_FILE_THRESHOLD:30}
+    # 子代理房间内 grep 命中阈值（更高，少打断）
+    child-grep-hit-line-threshold: ${SUBAGENT_CHILD_GREP_HIT_LINE_THRESHOLD:500}
+    child-grep-hit-file-threshold: ${SUBAGENT_CHILD_GREP_HIT_FILE_THRESHOLD:100}
+    # 评测专用强制模式（默认 off）。force_dispatch | force_no_spawn | off
+    eval-force-mode: ${SUBAGENT_EVAL_FORCE_MODE:off}
+    # 子代理房间里的**工具结果截断**上限（字符）。这是"房间上下文不会爆"的关键：
+    # 一个 readFile 能返回 20000 字，8 轮下来就是 16 万字 —— 截断后房间的 token 才可控。
+    # V1 主循环不截断；V2 主循环走上面的 main-tool-result-chars。
+    # 评测 V2 时建议把本项调到 ≥ main-tool-result-chars（子房间应高于主循环）。
+    max-tool-result-chars: ${SUBAGENT_MAX_TOOL_RESULT_CHARS:4000}
+    # 回给主 agent 的摘要上限（字符）。子代理读了几十个文件，主 agent 只需要结论。
+    max-summary-chars: ${SUBAGENT_MAX_SUMMARY_CHARS:800}
+    # 结构化报告里 answer（结论正文）的上限（汉字数）。**多个子代理各回一大段会把主上下文重新撑爆** ——
+    # 这正是官方文档警告的失败模式，所以超长会被内核截断并标注"已截断"。
+    max-answer-chars: ${SUBAGENT_MAX_ANSWER_CHARS:600}
+    # thoroughness 档位 → 轮数（**含**最后的收尾轮）。
+    # quick：只看一小块、问一个具体问题；medium：跨几个文件的独立调研（默认）；thorough：确实要广撒网。
+    # 轮数越多越贵，主 agent 的提示词里已说明"只在不知道要翻多少文件时才往大了填"。
+    quick-rounds: ${SUBAGENT_QUICK_ROUNDS:24}
+    medium-rounds: ${SUBAGENT_MEDIUM_ROUNDS:48}
+    thorough-rounds: ${SUBAGENT_THOROUGH_ROUNDS:72}
+    # 收尾轮之前剩几轮时开始软提醒（"不要再扩大搜索，只补最关键缺口、准备写结论"）。
+    warn-rounds-left: ${SUBAGENT_WARN_ROUNDS_LEFT:3}
+    # ===== 价格表（单位：元 / 每百万 token）=====
+    # **价格为配置项，请以实际服务商为准**：默认值按本项目当前在用的模型量级填写，
+    # 换模型/换服务商时只改这里，不改代码。命中缓存输入通常比未命中便宜 3~5 倍，所以分两档。
+    price-input-per-million: ${SUBAGENT_PRICE_INPUT:2.0}
+    price-cached-input-per-million: ${SUBAGENT_PRICE_CACHED_INPUT:0.5}
+    price-output-per-million: ${SUBAGENT_PRICE_OUTPUT:8.0}
+
+  # ===== 用户记忆（跨会话，按 user_id）=====
+  # 与对话历史、工作区 memory/*.md 并列，互不替代。前缀不要叫 app.memory（留给以后的项目级记忆）。
+  # 默认开。关掉时工具不下发、提示词整段不出现、不注入。打开后下发 saveUserMemory / forgetUserMemory，
+  # 并在 systemPrompt 之后插入一条【用户记忆】SystemMessage（不落 conversation_message）。
+  user-memory:
+    enabled: ${USER_MEMORY_ENABLED:true}
+    max-items: 40
+    max-item-chars: 1500
+    max-inject-chars: 6000
+
+  # ===== 工具权限（ASK 优先。DENY 只有内网和非 http(s)，写在代码里，不配白名单）=====
+  # rules 留空 = 用 PermissionPolicy 的内置表。要覆盖时再写 rules。
+  permission:
+    approval-timeout-seconds: ${PERMISSION_APPROVAL_TIMEOUT_SECONDS:120}
+
+  # ===== MCP 客户端（连外部 MCP Server，本项目是 Host 不是 Server）=====
+  # 默认开：没有 servers、数据库里也没有已启用服务时不拉子进程。
+  # 关掉时工具不下发、提示词整段不出现。
+  # 打开后按 servers 拉起 stdio 子进程，远端工具以 mcp__{server}__{tool} 进主循环。
+  # 子代理房间第一期拿不到这些工具（白名单没列）。
+  mcp:
+    enabled: ${MCP_ENABLED:true}
+    protocol-version: "2024-11-05"
+    initialize-timeout-ms: 15000
+    request-timeout-ms: 30000
+    max-result-chars: 8000
+    # auto（默认）= 已暴露 MCP 工具个数超过 auto-eager-max-tools，
+    # 或工具定义估算 token 达到上下文窗口的 auto-threshold-percent% 才 deferred，否则 eager；
+    # eager = 全部下发；deferred = 先搜再激活。估算是粗估（工具定义 JSON 字符数 ÷ 1.5）。
+    tool-loading: auto
+    # MCP 工具定义是否延迟加载的参考窗口。聊天预算、压缩和界面不读这个数，
+    # 它们用选中模型的 contextWindowTokens，没配时用 128000。
+    context-window-tokens: 128000
+    auto-threshold-percent: 10
+    # 已暴露 MCP 工具多过这个数就 deferred，不等百分比。
+    # 1M 窗口的 10% 约 10 万 token，25 个 Playwright 工具（约 1 万 token）踩不中，
+    # 但每轮整包重发。≤0 表示只看百分比。
+    auto-eager-max-tools: 8
+    # 旧的绝对阈值，判定已不再使用，留着避免已有配置报错
+    auto-threshold-tokens: 1500
+    max-active-tools: 8
+    search-max-results: 5
+    # 超限结果落盘。单条结果超过该服务的 max-result-chars 时，完整内容写入 dir，模型只看到预览加路径。
+    output:
+      spill-enabled: true        # false = 回到旧的头+尾截断，不写盘
+      preview-chars: 0           # 0 = 预览长度等于该服务的 max-result-chars；配更小的值会被它夹住上限
+      dir: ./mcp-output          # 落盘根目录，与 ./workspaces、./logs 同级
+      ttl-hours: 24              # 启动时清理超过这个小时数的文件；≤0 不按时间清理
+      max-bytes-per-conversation: 52428800   # 单会话落盘总量上限（字节，50MB），超过删最旧的，刚写入的不删
+    # ask = 读过不可信内容后，危险内置工具改为逐次审批（默认，不从名单里摘工具）；
+    # strip-dangerous = 旧行为，摘掉写类工具并用固定句子拒绝；off = 不因污点改变权限
+    untrusted-content-policy: ask
+    # 工具暴露规则：默认暴露 server 发现的所有工具，用 disabled-tools 排除个别工具。
+    # enabled-tools 已废弃（字段保留只为兼容旧 YAML）：配了会被忽略，启动时打一次废弃警告。
+    # 暴露 ≠ 授权：能不能执行仍由统一权限网关（未配置默认 ASK）与 URL 守卫决定。
+    # 当前没有独立的 blocked-tools 管理员硬拒绝层。
+    servers: {}
+    # 示例（不要把密钥写进本文件，用 application-local.yml 或环境变量）：
+    # servers:
+    #   echo:
+    #     command: java
+    #     args: ["-cp", "target/test-classes;target/classes", "com.example.jingjingai2.mcp.testdouble.EchoMcpServer"]
+    #     env: {}
+    #     description: "回声测试服务"
+    #     disabled-tools: []      # 空 = 不排除；写了 = 不下发、面板灰显、搜不到
+    #     # enabled-tools: []     # 已废弃，勿用（不报错，但也不再收窄暴露范围）
+    #
+    # Playwright 有状态，第一期 server 全用户共享，禁止多用户部署时开启。
+    # 本机无 Chrome 时用 --browser msedge。不要传 --caps tabs,wait（0.0.83 合法值是 vision,pdf,devtools；
+    # browser_tabs / browser_wait_for 已在默认 25 个工具里）。
+    # 冷启动 initialize 约 24s，必须 connect-timeout-seconds: 60。
+    # Windows 找 msedge 需要 spec.env 里的 ProgramFiles / ProgramFiles(x86) / USERPROFILE，
+    # 不要改全局最小 PATH（会改变 Phase 1 默认行为）。括号键写到 application-local.yml。
+    # servers:
+    #   playwright:
+    #     command: npx
+    #     args:
+    #       - -y
+    #       - "@playwright/mcp@latest"
+    #       - --headless
+    #       - --isolated
+    #       - --browser
+    #       - msedge
+    #       - --allowed-origins
+    #       - "https://example.com;https://playwright.dev"
+    #       - --output-dir
+    #       - target/playwright-mcp-output
+    #     env:
+    #       USERPROFILE: ${USERPROFILE:}
+    #       APPDATA: ${APPDATA:}
+    #       LOCALAPPDATA: ${LOCALAPPDATA:}
+    #       HOMEDRIVE: ${HOMEDRIVE:}
+    #       HOMEPATH: ${HOMEPATH:}
+    #       ProgramFiles: ${ProgramFiles:}
+    #       ProgramW6432: ${ProgramW6432:}
+    #     connect-timeout-seconds: 60
+    #     max-result-chars: 6000
+    #     trust: untrusted
+    #     history-prune-min-chars: 500
+    #     history-prune-tools:
+    #       - browser_navigate
+    #       - browser_snapshot
+    #       - browser_click
+    #       - browser_type
+    #       - browser_press_key
+    #     url-policy:
+    #       mode: default   # 回环、私网、云元数据一律拒绝，default 与 strict 在这点上相同；strict 额外拒绝 *.local / *.internal 主机名
+    #       arg-names: [url]
+    #     description: "Playwright 浏览器（有状态，第一期 server 全用户共享，禁止多用户部署时开启）"
+    #     enabled-tools:
+    #       - browser_navigate
+    #       - browser_snapshot
+    #       - browser_click
+    #       - browser_type
+    #       - browser_press_key
+    #       - browser_close
+
+spring:
+  config:
+    import: optional:file:./config/application-local.yml,optional:file:./mcp-run.yml
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-v4-flash
+
+  datasource:
+    url: jdbc:sqlite:./data/jingjing.db
+    driver-class-name: org.sqlite.JDBC
+    username: ""
+    password: ""
+    hikari:
+      maximum-pool-size: 1
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-sqlite.sql
+  servlet:
+    multipart:
+      # 放宽上限以支持"上传整个文件夹"（单文件 20MB，整批请求 200MB）
+      max-file-size: 20MB
+      max-request-size: 200MB
+
+# MyBatis 必须是顶层配置；放在 spring.mybatis 下不会被 starter 读取。
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+  type-aliases-package: com.example.jingjingai2.entity

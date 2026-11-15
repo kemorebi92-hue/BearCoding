@@ -1,0 +1,11 @@
+{
+  "note": "从 baseline-2026-10-17/T05-1-export.json 抽的最小字段，只留分类需要的：每轮 endReason 和每个工具名。不含参数、结果、回复。",
+  "source": "docs/eval/results/baseline-2026-10-17/T05-1-export.json",
+  "turns": [
+    {"endReason": "TOOL_CALLING"},
+    {"endReason": "TOOL_CALLING"},
+    {"endReason": "TOOL_CALLING"},
+    {"endReason": "NORMAL_STOP"}
+  ],
+  "toolNames": ["listDirectory", "readFile", "readFile", "createFile", "readFile", "verifyCompile"]
+}
