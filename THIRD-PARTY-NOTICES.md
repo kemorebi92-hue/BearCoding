@@ -67,25 +67,26 @@
 
 ### 1.3 Java Runtime（jlink 生成，随便携包分发）
 
+本轮已按「必须使用仍在维护的 OpenJDK 17」的要求，把运行时从 Oracle JDK 17.0.12（NFTC，2024-10 起不再有免费安全补丁）换成 **Eclipse Temurin 17.0.21+9**。
+
 | 项 | 实际值 |
 |---|---|
-| 发行版 | Oracle JDK（Oracle 官方构建） |
-| 版本 | 17.0.12+8-LTS-286（`java version "17.0.12" 2024-07-16 LTS`） |
-| 构建用 JDK | 本机 `JAVA_HOME=D:\jdk17`，同为 17.0.12+8-LTS-286 |
-| 运行时许可证 | Oracle No-Fee Terms and Conditions（NFTC），见 `desktop/.build/jre/legal/java.base/LICENSE` |
-| jlink 模块集 | `java.base,java.datatransfer,java.xml,java.prefs,java.desktop,java.instrument,java.logging,java.management,java.security.sasl,java.naming,java.net.http,java.rmi,java.scripting,java.security.jgss,java.transaction.xa,java.sql,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported` |
-| legal 文件 | 随 Runtime 保留：`legal/<module>/{LICENSE,COPYRIGHT}` 与 `legal/java.base/*.md`（aes、asm、cldr、icu、unicode、zlib、wepoll 等） |
-| 打包后位置 | `win-unpacked/resources/jre/legal/...`（已验证存在） |
+| 发行版 | Eclipse Temurin（Eclipse Adoptium 官方构建） |
+| 版本 | 17.0.21+9（`openjdk version "17.0.21" 2026-10-20`） |
+| 构建用 JDK | `D:\_bc-build-tools\temurin17\jdk\jdk-17.0.21+9`（`release` 文件：`IMPLEMENTOR="Eclipse Adoptium"`、`IMPLEMENTOR_VERSION="Temurin-17.0.21+9"`） |
+| 获取来源 | Adoptium API `https://api.adoptium.net/v3/assets/latest/17/hotspot?architecture=x64&image_type=jdk&os=windows&vendor=eclipse`，实际下载 `https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_windows_hotspot_17.0.21_9.zip` |
+| 压缩包 SHA-256 | `98518ecf554465057ee5509462631deeee374bc368c12a411d225cd29381f84b`（与 Adoptium 公布的 checksum 逐字一致，已用 `Get-FileHash` 复核） |
+| 运行时许可证 | GPL v2 with Classpath Exception（GPLv2+CE），见 `resources/jre/legal/java.base/LICENSE`；另有 `ADDITIONAL_LICENSE_INFO`、`ASSEMBLY_EXCEPTION` |
+| 维护状态 | Temurin 17 是仍在维护的 LTS 线，按季度出 CPU/PSU 更新；17.0.21 发布于 2026-10-20 |
+| jlink 模块集 | `java.base,java.datatransfer,java.xml,java.prefs,java.desktop,java.instrument,java.logging,java.management,java.security.sasl,java.naming,java.net.http,java.rmi,java.scripting,java.security.jgss,java.transaction.xa,java.sql,java.compiler,jdk.compiler,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported` |
+| 为什么带 `jdk.compiler` | `CodeVerifier` 用 `System.getProperty("java.home")/bin/javac.exe` 做「改完 Java 文件自动编译校验」。便携模式下 `java.home` 就是这个 jlink 运行时；上一版模块集没有 `jdk.compiler`，运行时里没有 `javac.exe`，编译校验会静默退化成「未验证：未找到 javac」。本轮已补上，并在构建脚本里加了断言。 |
+| legal 文件 | 随 Runtime 保留：`legal/<module>/{LICENSE,COPYRIGHT}`、`legal/java.base/{ADDITIONAL_LICENSE_INFO,ASSEMBLY_EXCEPTION,LICENSE,aes.md,asm.md,cldr.md,icu.md,public_suffix.md,siphash.md,unicode.md,wepoll.md,…}` |
+| 打包后位置 | EXE 内 `resources/jre/legal/...`（已从成品 EXE 解包核对，见 README「测试与证据」） |
 
-Oracle 官方 FAQ（[Oracle Java SE Licensing FAQ](https://www.oracle.com/java/technologies/javase/jdk-faqs.html)，更新于 2025-09-16）明确：
+**再分发依据**：Temurin 构建以 GPLv2+CE 发布，允许再分发（包括商业再分发），义务是随二进制保留许可证与版权声明、并提供对应源码的获取方式（Adoptium 在各自 release 页面提供源码与构建脚本）。本轮做法是：`jlink` 生成的运行时原样保留 `legal/` 目录，不修改、不剥离任何声明。
 
-- Java 17 的 **17.0.12 及更早**版本对全部用户适用 NFTC；**17.0.13 及之后**改用 My Oracle Support / OTN 许可。
-- NFTC「intended to permit use of the Program, including runtime images produced by the jlink tool, by any user, including in commercial and production use」。
-- 「Redistribution is permitted as long as it is not for a fee.」
+**与上一版的差别**：上一版是 Oracle JDK 17.0.12（NFTC），许可上允许免费再分发，但 2024-10 之后不再有免费安全补丁。换到 Temurin 17.0.21 后，运行时自带 2026-10 的安全更新。Oracle 的 NFTC 条款不再适用于本包。
 
-因此：**当前 17.0.12 jlink 运行时以免费、不收费的方式随 BearCoding 便携包再分发，在 NFTC 条款下是被允许的**，前提是不对分发收费、不移除 Oracle 的权属声明、不反编译。若将来对该 EXE 收费（含付费下载、付费捆绑），该结论立即失效，必须改用其他运行时或另行取得 Oracle 授权。
-
-**安全维护状态**：17.0.12 发布于 2024-07，是 Java 17 最后一个 NFTC 免费版本。2024-10 起 Oracle 对 17.0.13+ 的更新只通过 My Oracle Support / OTN 提供，NFTC 渠道不再提供 Java 17 的安全补丁。也就是说，随包分发的运行时**缺少 2024-10 之后的所有 Oracle 关键补丁更新（CPU）**。这是 BINARY 发布的独立决策项，见根 README 与 [desktop/README.md](desktop/README.md) 的已知限制。本轮未更换 JDK、未覆盖已有 EXE。
 
 ---
 
@@ -139,9 +140,22 @@ Oracle 官方 FAQ（[Oracle Java SE Licensing FAQ](https://www.oracle.com/java/t
 
 已核实：portable EXE 的解包目录 `desktop/release/win-unpacked/` 同时存在 `LICENSE.electron.txt` 与 `LICENSES.chromium.html`，且 `resources/jre/legal/` 随包保留。electron-builder 的 `portable` 目标打包的就是该目录，因此这两份声明**随 EXE 一起分发**。
 
+**本轮已补齐**：`desktop/package.json` 的 `extraResources` 现在会把仓库根目录的 `LICENSE` 与 `THIRD-PARTY-NOTICES.md` 复制进包内 `resources/licenses/`。构建脚本会校验包内副本与仓库版本的 SHA-256 一致，避免旧文件顶替。已从成品 `BearCoding-3.0.0-portable.exe` 解包 `app-64.7z` 复核，确认存在：
+
+```text
+LICENSE.electron.txt
+LICENSES.chromium.html
+resources\licenses\LICENSE.txt
+resources\licenses\THIRD-PARTY-NOTICES.md
+resources\jre\legal\java.base\LICENSE
+resources\jre\legal\java.base\ADDITIONAL_LICENSE_INFO
+resources\jre\legal\java.base\ASSEMBLY_EXCEPTION
+```
+
+因此包内现在同时有：BearCoding 自身 MIT、前端依赖与字体（SIL OFL 1.1）声明、Electron MIT、Chromium 及其第三方许可汇编、Temurin GPLv2+CE 运行时许可。
+
 `default_app.asar`（electron-builder 附带）不在本项目的许可义务范围内，但它随包存在，不影响上述声明。
 
-**仍未做的**：没有把 `THIRD-PARTY-NOTICES.md` 与 `LICENSE` 打进 EXE。当前 EXE 内只有 Electron / Chromium / Oracle JDK 三方的声明，**没有 BearCoding 自己的 MIT 许可证文本，也没有前端依赖和字体的声明**。正式分发前应把这两份文件加进 `extraResources`，见第 6 节。
 
 ---
 
@@ -263,17 +277,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 以下项目本轮**没有**取得可引用的确认，不应被视为已满足许可要求：
 
-1. `frontend/src/assets/` 下的图片、`desktop/build/icon.png`、`frontend/public/favicon.ico` 的**来源与授权**未确认，见 [ASSETS.md](ASSETS.md)。
-2. `ChatView.vue` 中硬编码的第三方头像 URL 未取得授权，见 [ASSETS.md](ASSETS.md)。
-3. 未对便携 EXE 做二进制成分扫描（`win-unpacked` 内的 DLL 属于 Electron/Chromium 官方发行版，未逐个核对）。
-4. 本文件记录的是各构件 POM 声明的许可证类型，未逐份比对完整许可证正文；Apache-2.0 / BSD / MIT / OFL 的义务已按「保留声明、不剥离 NOTICE、随包附带本文件与 LICENSE」的方式满足。
+1. `frontend/src/assets/` 下仍在使用的位图（`image.png`、`ims3.jpg`、`ims.webp`）、`desktop/build/icon.png`、`frontend/public/favicon.ico` 的**来源与授权**未确认，见 [ASSETS.md](ASSETS.md)。（`ChatView.vue` 里那个第三方头像 URL 已在 v3.0.0 发布候选中删除，改为仓库内自绘的 `avatar-bear.svg`。）
+2. 未对便携 EXE 做二进制成分扫描（`win-unpacked` 内的 DLL 属于 Electron/Chromium 官方发行版，未逐个核对）。本轮只核对了「文件级」成分：JAR、JRE、licenses、Electron/Chromium 声明是否存在、是否与仓库版本一致。
+3. 本文件记录的是各构件 POM 声明的许可证类型，未逐份比对完整许可证正文；Apache-2.0 / BSD / MIT / OFL 的义务已按「保留声明、不剥离 NOTICE、随包附带本文件与 LICENSE」的方式满足。
 
 ---
 
 ## 6. 建议的最小后续动作
 
-1. 把 `LICENSE` 与 `THIRD-PARTY-NOTICES.md` 加入 `desktop/package.json` 的 `extraResources`，让 EXE 内同时存在 BearCoding、前端依赖、字体和 Oracle JDK 的声明。（**二进制发布前必须做**）
-2. 解决 [ASSETS.md](ASSETS.md) 里列出的图片授权问题。
-3. 决定是否把 Oracle JDK 17.0.12 换成仍在安全维护期内的 OpenJDK 17 发行版（Temurin / Microsoft Build of OpenJDK / Zulu 等，GPLv2+CPE）。
+1. ~~把 `LICENSE` 与 `THIRD-PARTY-NOTICES.md` 加入 `extraResources`~~ —— **已完成**，构建脚本带哈希校验，成品 EXE 内已核实存在。
+2. 解决 [ASSETS.md](ASSETS.md) 里剩下的图片授权问题（4 个位图 + 1 个 ICO + EXE 图标）。这是目前唯一仍然阻塞「素材授权无冲突」结论的事项。
+3. ~~决定是否把 Oracle JDK 17.0.12 换成仍在安全维护期内的 OpenJDK 17~~ —— **已完成**，换成 Temurin 17.0.21+9（GPLv2+CE）。
 
 第 1.2 节的传递依赖清单已在 2026-11-15 通过父 POM 回溯补全，不再有待核实项。

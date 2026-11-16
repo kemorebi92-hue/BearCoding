@@ -35,6 +35,14 @@
       {
         "from": ".build/jre",
         "to": "jre"
+      },
+      {
+        "from": "../LICENSE",
+        "to": "licenses/LICENSE.txt"
+      },
+      {
+        "from": "../THIRD-PARTY-NOTICES.md",
+        "to": "licenses/THIRD-PARTY-NOTICES.md"
       }
     ],
     "win": {

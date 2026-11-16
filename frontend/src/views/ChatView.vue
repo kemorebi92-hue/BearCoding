@@ -318,6 +318,7 @@ import { TrashOutline, ArrowDownOutline, SendOutline, AddOutline, MenuOutline, C
 import ChatMessage from '@/components/ChatMessage.vue'
 import ConversationSidebar from '@/components/ConversationSidebar.vue'
 import McpManage from '@/views/McpManage.vue'
+import localAvatar from '@/assets/avatar-bear.svg'
 import { v4 as uuidv4 } from 'uuid'
 import { listModels, getModelStatus } from '@/api/model'
 import {
@@ -511,7 +512,10 @@ function updateSession(id, patch) {
   if ('planMeta' in patch) planMeta.value = patch.planMeta
 }
 
-const aiAvatar = 'https://kkimgs.yisou.com/ims?kt=url&at=smstruct&key=aHR0cHM6Ly9jLXNzbC5kdWl0YW5nLmNvbS91cGxvYWRzL2l0ZW0vMjAyMDAzLzA1LzIwMjAwMzA1MTcyNjI2X2dib2x2LnRodW1iLjEwMDBfMC5qcGVn&sign=yx:IXNEWeyXOdhODtClnwKShlFeElQ=&tv=400_400'
+// 顶部头像：本地 SVG（随前端产物一起打包），不再引用任何外部图片 URL。
+// 原实现指向 kkimgs.yisou.com 的第三方图片代理（堆糖图片），既有版权问题，
+// 也会在启动时把使用者 IP/UA 暴露给该第三方；离线环境下还加载不出来。
+const aiAvatar = localAvatar
 
 // ============= 模型选择器（系统模型只有真的配置了 Key 才出现） =============
 const modelOptions = ref([])

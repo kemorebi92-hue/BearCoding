@@ -1,4 +1,6 @@
-﻿param()
+﻿param(
+    [string]$OutputDir = ""
+)
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -8,7 +10,14 @@ $ProjectRoot = Split-Path -Parent $DesktopDir
 $FrontendDir = Join-Path $ProjectRoot "frontend"
 $BackendDir = Join-Path $ProjectRoot "backend"
 $BuildDir = Join-Path $DesktopDir ".build"
-$ReleaseDir = Join-Path $DesktopDir "release"
+if ($OutputDir) {
+    if (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
+        $OutputDir = Join-Path $DesktopDir $OutputDir
+    }
+    $ReleaseDir = [System.IO.Path]::GetFullPath($OutputDir)
+} else {
+    $ReleaseDir = Join-Path $DesktopDir "release"
+}
 $StaticDir = Join-Path $BackendDir "src\main\resources\static"
 
 function Write-Step([string]$Message) {
@@ -58,9 +67,24 @@ if (Test-Path -LiteralPath $MavenWrapper) {
 }
 
 $JavaVersionLine = (& cmd.exe /c "`"$JavaExe`" -version 2>&1" | Select-Object -First 1)
+$JdkReleasePath = Join-Path $JdkHome "release"
+if (-not (Test-Path -LiteralPath $JdkReleasePath)) {
+    throw "JAVA_HOME 下缺少 release 文件，无法记录 JDK 发行版信息：$JdkReleasePath"
+}
+$JdkRelease = @{}
+foreach ($Line in Get-Content -LiteralPath $JdkReleasePath) {
+    if ($Line -match '^([A-Z_]+)="?(.*?)"?$') { $JdkRelease[$Matches[1]] = $Matches[2] }
+}
+$JdkImplementor = $JdkRelease["IMPLEMENTOR"]
+$JdkRuntimeVersion = $JdkRelease["JAVA_RUNTIME_VERSION"]
+$JdkVersion = $JdkRelease["JAVA_VERSION"]
+if (-not $JdkImplementor -or -not $JdkRuntimeVersion) {
+    throw "无法从 $JdkReleasePath 解析 IMPLEMENTOR / JAVA_RUNTIME_VERSION。"
+}
 Write-Host "Node: $(& $Node --version)"
 Write-Host "npm:  $(& $Npm --version)"
 Write-Host "Java: $JavaVersionLine"
+Write-Host "JDK:  $JdkImplementor $JdkRuntimeVersion（$JdkHome）"
 Write-Host "jlink: $(& $JlinkExe --version)"
 Write-Host "Maven: $Maven"
 
@@ -77,6 +101,7 @@ $BackendJar = Join-Path $BackendDir "target\$BackendArtifactId-$BackendVersion.j
 $Artifact = Join-Path $ReleaseDir "BearCoding-$DesktopVersion-portable.exe"
 Write-Host "Desktop version: $DesktopVersion"
 Write-Host "Backend artifact: $BackendArtifactId-$BackendVersion.jar"
+Write-Host "Output dir: $ReleaseDir"
 
 Write-Step "清理本阶段生成目录"
 if (Test-Path -LiteralPath $BuildDir) {
@@ -126,6 +151,13 @@ Write-Host "JAR SHA-256: $JarSha256"
 Copy-Item -LiteralPath $BackendJar -Destination (Join-Path $BuildDir "bearcoding-backend.jar") -Force
 
 Write-Step "生成 jlink Java Runtime"
+# 模块集说明：
+#   - 前 21 项是后端运行所需（Spring Boot / sqlite-jdbc / JNA / TLS）。
+#   - java.compiler + jdk.compiler 是**必须**的：CodeVerifier 用
+#     System.getProperty("java.home")/bin/javac.exe 做「改完 Java 文件自动编译校验」，
+#     java.home 在便携模式里就是本 Runtime。缺 jdk.compiler 时 jre/bin/javac.exe 不存在，
+#     CodeVerifier 会退化成 Result.unverified("未验证：未找到 javac…")，
+#     即编译校验静默失效。下面的断言会拦住这种回归。
 $Modules = @(
     "java.base",
     "java.datatransfer",
@@ -143,6 +175,8 @@ $Modules = @(
     "java.security.jgss",
     "java.transaction.xa",
     "java.sql",
+    "java.compiler",
+    "jdk.compiler",
     "jdk.charsets",
     "jdk.crypto.ec",
     "jdk.localedata",
@@ -163,10 +197,18 @@ $BundledJava = Join-Path $JreDir "bin\java.exe"
 if (-not (Test-Path -LiteralPath $BundledJava)) {
     throw "jlink 未生成 jre/bin/java.exe。"
 }
+$BundledJavac = Join-Path $JreDir "bin\javac.exe"
+if (-not (Test-Path -LiteralPath $BundledJavac)) {
+    throw "jlink Runtime 缺少 jre/bin/javac.exe：CodeVerifier 的自动编译校验会失效。请确认模块集包含 java.compiler,jdk.compiler。"
+}
 if (-not (Test-Path -LiteralPath (Join-Path $JreDir "legal"))) {
     throw "jlink 运行时缺少 legal 目录，许可证文件不完整。"
 }
+if (-not (Test-Path -LiteralPath (Join-Path $JreDir "legal\java.base\LICENSE"))) {
+    throw "jlink 运行时缺少 legal/java.base/LICENSE，运行时许可文件不完整。"
+}
 Invoke-Native $BundledJava @("-version") $DesktopDir
+Invoke-Native $BundledJavac @("-version") $DesktopDir
 
 Write-Step "安装 Electron 依赖并生成 portable EXE"
 Invoke-Native $Npm @("ci", "--prefer-offline", "--no-audit", "--no-fund") $DesktopDir
@@ -223,7 +265,7 @@ if (-not (Test-Path -LiteralPath $Builder)) {
     throw "未找到 electron-builder：$Builder"
 }
 $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
-Invoke-Native $Builder @("--win", "portable", "--publish", "never") $DesktopDir
+Invoke-Native $Builder @("--win", "portable", "--publish", "never", "--config.directories.output=$ReleaseDir") $DesktopDir
 
 if (-not (Test-Path -LiteralPath $Artifact)) {
     throw "electron-builder 未生成预期 portable EXE：$Artifact"
@@ -232,13 +274,35 @@ if ((Get-Item -LiteralPath $Artifact).Length -lt 50MB) {
     throw "portable EXE 体积异常，疑似未包含 JRE/JAR：$Artifact"
 }
 
+# 低完整性目录（例如某些沙箱工作区）会让生成的 EXE 继承 Low Mandatory Level。
+# Windows 随后以 Low integrity 启动该 EXE，NSIS 无法写入普通用户的 %TEMP%，
+# 会报 "Error writing temporary file"；Electron 也可能在初始化阶段异常退出。
+# 这里直接拒绝这种产物，避免把“构建成功”误当成“可双击”。
+$ArtifactAcl = (& icacls $Artifact 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0) {
+    throw "无法读取产物完整性标签：$Artifact`n$ArtifactAcl"
+}
+if ($ArtifactAcl -match 'Low Mandatory Level|S-1-16-4096') {
+    throw ("生成的 EXE 带 Low Mandatory Level（低完整性）标签：" + $Artifact + "`n" +
+        "Windows 会以 Low integrity 启动它，NSIS 无法写入普通 %TEMP%，会出现`n" +
+        "`"Error writing temporary file. Make sure your temp folder is valid.`"。`n" +
+        "请用 -OutputDir 指向普通目录（例如 D:\BearCoding-Release）重新构建，`n" +
+        "或把成品复制到普通目录后再验收/上传；不要直接在低完整性工作区内双击。")
+}
+
 Write-Step "校验发布目录与内置资源"
 $UnpackedResources = Join-Path $ReleaseDir "win-unpacked\resources"
 $Required = @(
     (Join-Path $UnpackedResources "app.asar"),
     (Join-Path $UnpackedResources "app\bearcoding-backend.jar"),
     (Join-Path $UnpackedResources "jre\bin\java.exe"),
-    (Join-Path $UnpackedResources "jre\release")
+    (Join-Path $UnpackedResources "jre\bin\javac.exe"),
+    (Join-Path $UnpackedResources "jre\release"),
+    (Join-Path $UnpackedResources "jre\legal\java.base\LICENSE"),
+    (Join-Path $UnpackedResources "licenses\LICENSE.txt"),
+    (Join-Path $UnpackedResources "licenses\THIRD-PARTY-NOTICES.md"),
+    (Join-Path $ReleaseDir "win-unpacked\LICENSE.electron.txt"),
+    (Join-Path $ReleaseDir "win-unpacked\LICENSES.chromium.html")
 )
 foreach ($Path in $Required) {
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -248,6 +312,18 @@ foreach ($Path in $Required) {
 $PackagedJarSha256 = Get-FileSha256 (Join-Path $UnpackedResources "app\bearcoding-backend.jar")
 if ($PackagedJarSha256 -ne $JarSha256) {
     throw "发布目录内 JAR 与本次构建 JAR 哈希不一致。"
+}
+
+# 许可证文本必须是仓库里那一份，不能被旧文件顶替
+$SourceLicenseSha256 = Get-FileSha256 (Join-Path $ProjectRoot "LICENSE")
+$PackagedLicenseSha256 = Get-FileSha256 (Join-Path $UnpackedResources "licenses\LICENSE.txt")
+if ($SourceLicenseSha256 -ne $PackagedLicenseSha256) {
+    throw "发布目录内的 LICENSE.txt 与仓库 LICENSE 不一致。"
+}
+$SourceNoticesSha256 = Get-FileSha256 (Join-Path $ProjectRoot "THIRD-PARTY-NOTICES.md")
+$PackagedNoticesSha256 = Get-FileSha256 (Join-Path $UnpackedResources "licenses\THIRD-PARTY-NOTICES.md")
+if ($SourceNoticesSha256 -ne $PackagedNoticesSha256) {
+    throw "发布目录内的 THIRD-PARTY-NOTICES.md 与仓库版本不一致。"
 }
 
 $Forbidden = Get-ChildItem -LiteralPath $ReleaseDir -Recurse -File -Force | Where-Object {
@@ -262,12 +338,18 @@ if ($Forbidden) {
 $ExeSha256 = Get-FileSha256 $Artifact
 $BuildInfo = [ordered]@{
     builtAt = (Get-Date).ToString("o")
+    outputDir = $ReleaseDir
     desktopVersion = $DesktopVersion
     backendArtifact = "$BackendArtifactId-$BackendVersion"
     jarPath = $BackendJar
     jarSha256 = $JarSha256
     jlinkModules = $Modules
     javaVersion = $JavaVersionLine
+    javaHome = $JdkHome
+    jdkImplementor = $JdkImplementor
+    jdkRuntimeVersion = $JdkRuntimeVersion
+    jdkVersion = $JdkVersion
+    jdkReleaseFile = $JdkReleasePath
     nodeVersion = (& $Node --version)
     npmVersion = (& $Npm --version)
     electronVersion = $DesktopPackage.devDependencies.electron

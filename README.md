@@ -1,19 +1,17 @@
 # BearCoding
 
-本地运行的 Java AI Coding Agent。在你自己机器的工作区里，用自然语言让模型读代码、定计划、调用工具、改文件、执行命令；每次工具调用都经过权限检查，对话变长时由自研的上下文管理决定发给模型什么。
+BearCoding 是一个面向本地代码工作区的 Java AI Coding Agent。用户提出任务后，Java 后端组织对话历史、记忆和计划，调用用户配置的大模型。模型可以直接回答，也可以请求读取文件、修改代码、执行命令或调用其他工具。
 
 - 版本：`3.0.0`
 - 形态：Spring Boot 后端 + Vue 3 前端 + 可选 Electron 桌面外壳（Windows x64）
-- 状态：源码可用；Windows 便携包**尚未通过完整运行态验收**，不作为本版发布物
+- 状态：源码可用；**Windows x64 便携版 v3.0.0 已发布**（[Releases](https://github.com/kemorebi92-hue/BearCoding/releases/tag/v3.0.0)）。成品在普通目录、无参数双击已通过窗口、后端、数据目录和一次完整核心任务；只有从带 `Low Mandatory Level` 标签的构建目录产出的 EXE 不能直接双击，见「已知限制」第 1 条
 - 许可证：[MIT](LICENSE)
 
 ---
 
 ## 这是什么
 
-BearCoding 不是聊天接口的包装层。Spring AI 只负责按 OpenAI 兼容协议调用模型；任务循环、计划、子代理、上下文投影、工具权限和 MCP 接入都在本仓库里实现。
-
-页面发起任务后，后端把当前对话、系统提示和必要历史交给模型。模型可以只回答，也可以调用文件、终端、计划和检索工具。需要确认的操作会停下来，等你在页面上点允许或拒绝。
+BearCoding 自己实现 Agent 循环：接收模型的工具请求，检查执行权限，必要时等待用户审批，将执行结果送回模型，再决定是否进入下一轮。Spring AI 提供模型接入以及消息、工具调用的基础接口；循环编排、权限审批、上下文管理、子代理和 MCP 工具接入由本项目实现。Vue 页面通过 SSE 展示执行过程，SQLite 保存会话与配置。
 
 模型、MCP 服务器、联网搜索全部由使用者自行配置。没有配置也能启动，只是不能聊天。
 
@@ -82,7 +80,9 @@ npm run serve        # 5173，把 /ai、/api、/user 代理到 8082
 
 联网搜索是可选的：设置 `SEARCH_API_KEY`，或一次性导入到数据根的 `secrets\search-credential.bin`。不设置时 `webSearch` 不可用，应用照常启动。
 
-### Windows 便携包（尚未作为发布物）
+### Windows 便携包（v3.0.0 已发布）
+
+已发布成品在 [Releases](https://github.com/kemorebi92-hue/BearCoding/releases/tag/v3.0.0)：下载 `BearCoding-3.0.0-portable.exe`，放在任意普通目录（下载目录、桌面均可）双击即可，不需要安装 Java。
 
 `desktop/` 是独立的 Electron 外壳源码，可从本仓库独立构建：
 
@@ -92,9 +92,32 @@ npm ci
 npm run build:portable     # Vue → Spring Boot JAR → jlink Runtime → portable EXE
 ```
 
-产物在 `desktop/release/BearCoding-3.0.0-portable.exe`（约 192 MiB）。
+**构建注意事项（只影响自己构建的人，不影响下载到的成品）**：`build-portable.ps1` 默认输出到 `desktop/release`。如果构建工作区带 NTFS `Low Mandatory Level` 标签（本机 `D:\BearCoding-Final` 就是），生成的 EXE 会继承该标签，双击时 Windows 以 Low integrity 启动它，NSIS 无法写普通 `%TEMP%`。构建脚本会直接拒绝这种产物，请把输出目录指向普通目录：
 
-**但本版不发布这个 EXE**：完整 Electron 窗口从未成功运行（本机 Electron 45.3.2 启动即 `0xc0000005`，最小 Electron 应用同样复现），因此窗口创建、令牌注入、单实例、退出清理都没有运行态验收。已完成的只有 JAR/JRE 启动、页面渲染、`/chat` 200、受保护 API 的 401/200 和数据隔离。细节见 [desktop/README.md](desktop/README.md)。
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-portable.ps1 `
+  -OutputDir D:\BearCoding-Release-Candidate\build
+```
+
+`--no-sandbox` 只是排查参数，不是修复方案。根因与证据见 [desktop/README.md](desktop/README.md) 第 9 节。
+
+已发布产物的身份（干净目录构建）：
+
+```text
+文件名    BearCoding-3.0.0-portable.exe
+路径      D:\BearCoding-Release-Candidate\BearCoding-3.0.0-portable.exe（构建输出在 .\build\）
+大小      209,525,573 字节（199.8 MiB）
+SHA-256   EFF3154031D13A1403CBCA5B1DEBEB0B9741A355FD512AAF02B4DF4F1082F4A5
+JAR SHA-256 41FED9A09746443B562875B5F56314CDAC1D47C824B8779BEC52139A402CA997
+构建时间  2026-11-16T18:03:48+08:00
+构建来源  Temurin 17.0.21+9 + Electron 45.3.2 + electron-builder 26.18.0（详见 .build/build-info.json）
+```
+
+**这份 EXE 的验收状态**：
+
+- 无参数启动（不传 `--no-sandbox`、不传 `--user-data-dir`），在默认 C: `%TEMP%` 下 NSIS 正常自解包；窗口 `Chrome_WidgetWin_1|BearCoding` 出现（1200×800），Java 后端启动，隔离数据目录生成 `jingjing.db`、`logs`、`secrets`、`workspaces`。
+- 用 `desktop/test/portable-core-task-verify.ps1` + 受控 OpenAI 兼容测试服务，在干净构建的 JRE/JAR 上跑通了一次完整核心任务：读文件 → 改 Java 文件 → 自动 `javac` 校验（`[VerifyCompile] ran=true success=true`）→ 输出 `Hello, BearCoding v3.0.0`。
+- 该 EXE 已作为 `v3.0.0` Release 附件发布，源码与附件来自同一个提交。
 
 ## 数据与隐私
 
@@ -112,25 +135,29 @@ npm run build:portable     # Vue → Spring Boot JAR → jlink Runtime → porta
 | 后端离线测试 | **1616 项运行 / 0 失败 / 0 错误 / 9 跳过** | `mvn -o test`，不连真实模型、不连外部 MCP（Phase A 全量回归） |
 | 前端 node 测试 | **52 项通过** | `npm run test:group` |
 | 前端生产构建 | 通过 | `npm run build`，产物进 jar 后页面可加载 |
-| 真实模型完整任务 | 通过（一次） | 读文件 → 改文件 → `javac` → 运行，输出正确 |
+| 真实模型完整任务 | 通过（一次） | 读文件 → 改文件 → `javac` → 运行，输出正确（2026-11-14，真实模型） |
 | 上下文摘要 / 退休 / 恢复 | 通过（受控阈值 5000） | 默认 64000 预算下未触发，见下 |
-| 便携包构建 | 通过 | Vue → JAR → jlink → EXE，退出码 0 |
-| 便携包运行态（非窗口） | 部分通过 | JAR/JRE 启动、`/chat` 200、401/200、仅回环、数据隔离 |
-| 完整 Electron 窗口 | **未验证** | `0xc0000005`，最小 Electron 应用同样复现 |
+| 便携包构建 | 通过 | Vue → JAR → jlink(Temurin 17.0.21) → EXE，退出码 0，构建脚本自检全绿 |
+| `desktop` 路径单测 | **9 项通过** | `npm test`（`test/paths.test.cjs`） |
+| 便携包运行态（非窗口） | 通过 | `npm run test:runtime`：JAR/JRE 启动、`/chat` 200、401/200、仅回环、数据隔离、令牌不进 stdout |
+| 成品 EXE 窗口验收 | **通过（普通目录）** | 未用 `--no-sandbox`、未用 `--user-data-dir`；CDP 检查仅额外加 `--remote-debugging-port`。窗口、模型配置页、令牌注入、无令牌 401、单实例、退出清理、数据目录、导航白名单全部实测 |
+| 便携版核心任务（受控测试模型） | 通过 | 读文件 → 改 Java → 自动 `javac` 校验 `ran=true success=true` → 结果回显；隔离数据目录 |
+| 便携版双击直接启动 | **通过（普通目录）** | 无参数启动、窗口出现；低完整性工作区内的产物除外，原因见下方第 1 条 |
 
-证据原文在 `evidence/` 目录（只保留 Markdown 报告；截图与原始日志属于本机产物，未随仓库发布）。
+证据原文在 `evidence/` 目录（只保留 Markdown 报告；截图与原始日志属于本机产物，未随仓库发布）。根因与最终验收见 [evidence/bearcoding-v3.0.0-integrity-rootcause-20261116.md](evidence/bearcoding-v3.0.0-integrity-rootcause-20261116.md)；旧候选报告保留为历史记录并已加更正说明。
 
 ## 已知限制
 
-1. **完整 Electron 窗口未验收**。令牌注入、单实例、退出清理、导航白名单都没有在运行态确认过。不要把「EXE 能构建」当成「桌面版能用」。
-2. **内置 Java Runtime 是 Oracle JDK 17.0.12**，属 NFTC 许可，可免费再分发（不得收费），但它是 Java 17 最后一个 NFTC 免费版本；2024-10 之后的安全补丁只走 My Oracle Support / OTN，因此该运行时缺少此后全部关键补丁。换成仍在维护的 OpenJDK 17 发行版是二进制发布前的必做项。
+1. **从低完整性目录构建出的 EXE 不能直接双击**。如果构建工作区带 `Low Mandatory Level`（本机 `D:\BearCoding-Final` 就是），构建出的 EXE 会继承该标签；Windows 以 Low integrity 启动它，NSIS 无法写普通 `%TEMP%`，Electron 也可能在初始化阶段退出。构建脚本已会拒绝这种产物，请用 `-OutputDir` 指向普通目录；`--no-sandbox` 不是修复。这是构建目录属性，与 Release 里下载到的成品无关。详见 [desktop/README.md](desktop/README.md) 第 9 节。
+2. **内置 Java Runtime 已换成 Eclipse Temurin 17.0.21+9**（GPLv2+CE，2026-10-20 发布，仍在维护的 LTS 线）。上一版的 Oracle JDK 17.0.12 属 NFTC 且 2024-10 后无免费安全补丁，已不再随包分发。构建来源、校验值与随包 `legal/` 文件见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 第 1.3 节。
 3. **真实外部 MCP 未验证**。只用过本机自建的 MCP 服务，外部服务的兼容性没有结论。
 4. **默认 64000 token 预算下，工具结果退休不一定触发**。已验证的退休发生在受控阈值（5000）下；默认预算通常没有预算压力，不能推断它总会触发。
 5. **外部网页内容不触发污点升级**。MCP 工具结果会把会话标记为「读过不可信内容」，`webSearch` 抓回的网页正文不会；因此读过网页后，免审批的 `saveMemory` 仍可写入工作区记忆。需要更严的边界时请关闭 `webSearch` 或收紧权限配置。
 6. **桌面外壳仅 Windows x64**。源码本身可在任意能跑 JDK 17 的系统上构建，但 Electron 外壳只有 Windows 打包配置，没有 macOS / Linux 版本，也没有安装版、自动更新和代码签名。
 7. **权限是应用内规则**，不是容器或操作系统级隔离。路径检查和命令检查都在进程内完成。
-8. **只支持 Java 的自动编译校验**（`javac`），其他语言没有等价检查。
-9. **聊天页顶部头像引用的是外部图片 URL**，离线环境下不显示。素材授权状态见 [ASSETS.md](ASSETS.md)。
+8. **只支持 Java 的自动编译校验**（`javac`），其他语言没有等价检查。便携版内置运行时已包含 `jdk.compiler`，`jre\bin\javac.exe` 可用。
+9. **素材授权仍未收口**：聊天页顶部的第三方头像 URL 已在本版删除，改为仓库内自绘的 `avatar-bear.svg`；但消息头像、页面背景、favicon 和 EXE 图标这 5 个位图仍无法确认来源与授权，需要你确认。见 [ASSETS.md](ASSETS.md)。
+10. **EXE 未做代码签名**，首次运行会触发 SmartScreen；也没有自动更新。
 
 ## 文档
 
@@ -141,10 +168,10 @@ npm run build:portable     # Vue → Spring Boot JAR → jlink Runtime → porta
 - [桌面外壳说明与已知限制](desktop/README.md)
 - [后端说明](backend/README.md) · [前端说明](frontend/README.md)
 - [验收清单](ACCEPTANCE.md)
-- [v3.0.0 Release Notes 草稿](docs/RELEASE-NOTES-v3.0.0.md)
+- [v3.0.0 发布说明](docs/RELEASE-NOTES-v3.0.0.md)
 
 ## 许可证
 
 BearCoding 自研源码采用 [MIT License](LICENSE)，版权年份 2026。
 
-第三方组件、字体（SIL OFL 1.1）、Electron / Chromium 与 Oracle JDK 运行时各有自己的许可证和保留声明，见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。图片与图标资源的授权状态另见 [ASSETS.md](ASSETS.md)。
+第三方组件、字体（SIL OFL 1.1）、Electron / Chromium 与 Eclipse Temurin 运行时各有自己的许可证和保留声明，见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。便携 EXE 内随包提供 `resources\licenses\LICENSE.txt`、`resources\licenses\THIRD-PARTY-NOTICES.md`、`LICENSE.electron.txt`、`LICENSES.chromium.html` 和 `resources\jre\legal\`。图片与图标资源的授权状态另见 [ASSETS.md](ASSETS.md)。

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BearCoding 聊天页顶部头像（本地资源，v3.0.0 新增）。
+
+  来源与授权：本文件由 BearCoding 项目为 v3.0.0 发布候选专门绘制，
+  不含任何第三方图片、字体或商标素材；与仓库其余自研源码一样按根目录
+  MIT LICENSE 授权。它替换掉了原先硬编码在 ChatView.vue 里的第三方图片
+  代理 URL（kkimgs.yisou.com → duitang.com），因此发布包不再向该第三方
+  发起请求，离线环境下也能正常显示。
+
+  改动此文件时请保持「纯手写 SVG、无外部引用」这一属性，
+  不要在 <image> 里嵌入位图或外部 URL。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="BearCoding">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffe9c2"/>
+      <stop offset="100%" stop-color="#f6c76f"/>
+    </linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a9744f"/>
+      <stop offset="100%" stop-color="#7d5133"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 圆角底 -->
+  <rect x="0" y="0" width="96" height="96" rx="26" fill="url(#bg)"/>
+
+  <!-- 耳朵 -->
+  <circle cx="27" cy="30" r="12" fill="url(#fur)"/>
+  <circle cx="69" cy="30" r="12" fill="url(#fur)"/>
+  <circle cx="27" cy="30" r="6" fill="#e8bd8f"/>
+  <circle cx="69" cy="30" r="6" fill="#e8bd8f"/>
+
+  <!-- 头 -->
+  <circle cx="48" cy="53" r="28" fill="url(#fur)"/>
+
+  <!-- 口鼻区 -->
+  <ellipse cx="48" cy="63" rx="16" ry="12.5" fill="#f3dcc2"/>
+
+  <!-- 眼睛 -->
+  <circle cx="38" cy="48" r="3.6" fill="#2b1d14"/>
+  <circle cx="58" cy="48" r="3.6" fill="#2b1d14"/>
+  <circle cx="39.2" cy="46.8" r="1.2" fill="#ffffff"/>
+  <circle cx="59.2" cy="46.8" r="1.2" fill="#ffffff"/>
+
+  <!-- 鼻子与嘴 -->
+  <ellipse cx="48" cy="58" rx="4.2" ry="3.1" fill="#2b1d14"/>
+  <path d="M48 61.1v3.2" stroke="#2b1d14" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+  <path d="M43.4 66.4c1.6 1.9 3.6 2.8 4.6 2.8s3-.9 4.6-2.8" stroke="#2b1d14" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+</svg>
